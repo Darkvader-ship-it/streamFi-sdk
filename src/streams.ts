@@ -15,9 +15,11 @@ import type {
   Subscription,
   BatchWithdrawItem,
   BatchWithdrawResult,
+  StreamOperation,
 } from './types/index.js';
 import type { WalletAdapter } from './adapters/types.js';
 import { KeypairWalletAdapter } from './adapters/keypair.js';
+import { FeeEstimator } from './fee-estimator.js';
 import { toStroops, calculateRate, bigintSafeStringify } from './utils.js';
 import {
   buildContractCallTx,
@@ -64,11 +66,12 @@ function warnV1Deprecated(methodName: string, replacement: string): void {
 import { ZERO_ADDR } from './constants.js';
 
 export class StreamsModule {
-  private readonly rpcUrl:     string;
-  private readonly passphrase: string;
-  private readonly callerAddr: string;
-  private readonly _factory:   FactoryModule;
-  private activeWallet?:       WalletAdapter;
+  private readonly rpcUrl:       string;
+  private readonly passphrase:   string;
+  private readonly callerAddr:   string;
+  private readonly _factory:     FactoryModule;
+  private readonly feeEstimator: FeeEstimator = new FeeEstimator();
+  private activeWallet?:         WalletAdapter;
 
   constructor(private readonly config: ConduitConfig) {
     this.rpcUrl     = config.rpcUrl ?? DEFAULT_RPC[config.network];
@@ -276,6 +279,42 @@ export class StreamsModule {
     return this._invoke(await this._resolveAddr(BigInt(streamId)), 'top_up', [
       nativeToScVal(amount, { type: 'i128' }),
     ]);
+  }
+
+  /** Transfer recipient of the stream (sender only). */
+  async transferRecipient(streamId: bigint | string, newRecipient: string): Promise<string> {
+    this._ensureCanMutate();
+    return this._invoke(await this._resolveAddr(BigInt(streamId)), 'transfer_recipient', [
+      new Address(newRecipient).toScVal(),
+    ]);
+  }
+
+  /** Estimate network fee for a stream operation. */
+  async estimateFee(operation?: StreamOperation): Promise<number> {
+    return this.feeEstimator.estimateFee(async () => {
+      const base = 100;
+      if (!operation) return base;
+      const opType = typeof operation === 'string' ? operation : operation.type;
+      switch (opType) {
+        case 'create':
+          return 500;
+        case 'batchWithdraw': {
+          const count =
+            typeof operation === 'object' && operation !== null && 'items' in operation && Array.isArray(operation.items)
+              ? operation.items.length
+              : 1;
+          return 100 * Math.max(1, count);
+        }
+        case 'withdraw':
+        case 'cancel':
+        case 'pause':
+        case 'resume':
+        case 'topUp':
+        case 'transferRecipient':
+        default:
+          return 100;
+      }
+    });
   }
 
   /**

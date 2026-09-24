@@ -135,3 +135,28 @@ export interface BatchWithdrawResult {
   txHash?: string;
   error?: string;
 }
+
+// -- Stream Operations & Fee Estimation ---------------------------------------
+
+export type StreamOperationType =
+  | 'create'
+  | 'withdraw'
+  | 'cancel'
+  | 'pause'
+  | 'resume'
+  | 'topUp'
+  | 'transferRecipient'
+  | 'batchWithdraw';
+
+export type StreamOperation =
+  | StreamOperationType
+  | { type: 'create'; params?: CreateStreamParams }
+  | { type: 'withdraw'; streamId?: bigint | string; amount?: bigint }
+  | { type: 'cancel'; streamId?: bigint | string }
+  | { type: 'pause'; streamId?: bigint | string }
+  | { type: 'resume'; streamId?: bigint | string }
+  | { type: 'topUp'; streamId?: bigint | string; amount?: bigint }
+  | { type: 'transferRecipient'; streamId?: bigint | string; newRecipient?: string }
+  | { type: 'batchWithdraw'; items?: BatchWithdrawItem[] }
+  | { type: string; [key: string]: unknown };
+

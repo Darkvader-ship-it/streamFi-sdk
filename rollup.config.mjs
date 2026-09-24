@@ -1,7 +1,7 @@
 import resolve    from '@rollup/plugin-node-resolve';
 import typescript from '@rollup/plugin-typescript';
 
-const external = ['@stellar/stellar-sdk'];
+const external = ['@stellar/stellar-sdk', 'react', 'react-dom', 'react/jsx-runtime'];
 
 const shared = {
   input: {
