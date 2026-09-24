@@ -78,9 +78,13 @@ export {
   estimatedCompletionDate,
   normalizeProgress,
   withdrawableLocal,
+  sumWithdrawable,
   bigintSafeStringify,
   timeoutSignal,
 } from './utils.js';
+
+// Constants
+export { MIN_STREAM_DURATION_SECONDS } from './constants.js';
 
 // RPC server lifecycle
 export { getServer, clearServerCache, resolveFee } from './soroban.js';
