@@ -17,9 +17,26 @@ export class KeypairWalletAdapter implements WalletAdapter {
     _opts?: SignTransactionOptions,
   ): Promise<Transaction | string> {
     if (typeof tx === 'string') {
-      const parsedTx = new Transaction(tx, _opts?.networkPassphrase ?? '');
+      if (!_opts?.networkPassphrase) {
+        throw new Error(
+          'networkPassphrase is required when signing a raw XDR string. ' +
+            'Pass { networkPassphrase } in the options argument.',
+        );
+      }
+      const parsedTx = new Transaction(tx, _opts.networkPassphrase);
       parsedTx.sign(this.keypair);
       return parsedTx.toXDR();
+    }
+
+    if (
+      _opts?.networkPassphrase &&
+      tx.networkPassphrase !== undefined &&
+      tx.networkPassphrase !== _opts.networkPassphrase
+    ) {
+      throw new Error(
+        `networkPassphrase mismatch: the transaction was built for "${tx.networkPassphrase}" ` +
+          `but opts.networkPassphrase is "${_opts.networkPassphrase}".`,
+      );
     }
 
     tx.sign(this.keypair);

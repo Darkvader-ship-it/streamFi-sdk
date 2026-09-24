@@ -1,5 +1,6 @@
 import { Transaction } from '@stellar/stellar-sdk';
 import type { WalletAdapter, SignTransactionOptions } from './types.js';
+import { CAIP2_TO_NETWORK } from '../errors.js';
 
 export interface WalletConnectAppMetadata {
   name: string;
@@ -26,8 +27,12 @@ export interface WalletConnectSession {
 export interface WalletConnectAdapterOptions {
   /** WalletConnect v2 Project ID */
   projectId?: string;
-  /** CAIP-2 chain identifier (e.g., 'stellar:pubnet', 'stellar:testnet'). Defaults to 'stellar:pubnet' */
-  chainId?: string;
+  /**
+   * CAIP-2 chain identifier (e.g., 'stellar:pubnet', 'stellar:testnet').
+   * Must be one of: 'stellar:pubnet', 'stellar:testnet', 'stellar:local'.
+   * Defaults to 'stellar:pubnet'.
+   */
+  chainId?: string | undefined;
   /** DApp metadata for WalletConnect modal/handshake */
   metadata?: WalletConnectAppMetadata;
   /** Optional pre-existing WalletConnect SignClient or provider instance */
@@ -44,7 +49,7 @@ export interface WalletConnectAdapterOptions {
  */
 export class WalletConnectAdapter implements WalletAdapter {
   private readonly projectId?: string | undefined;
-  private readonly chainId: string;
+  public readonly chainId: string;
   private readonly metadata?: WalletConnectAppMetadata | undefined;
   private client: WalletConnectSignClient | null;
   private session: WalletConnectSession | null;
@@ -52,7 +57,20 @@ export class WalletConnectAdapter implements WalletAdapter {
 
   constructor(options: WalletConnectAdapterOptions = {}) {
     this.projectId = options.projectId;
-    this.chainId   = options.chainId ?? 'stellar:pubnet';
+    const chainId  = options.chainId ?? 'stellar:pubnet';
+
+    // Validate the CAIP-2 chain identifier at construction time so callers
+    // get an immediate, descriptive error instead of a silent cross-chain
+    // payload submission later (fixes #157).
+    if (!(chainId in CAIP2_TO_NETWORK)) {
+      const supported = Object.keys(CAIP2_TO_NETWORK).join(', ');
+      throw new Error(
+        `WalletConnectAdapter: unsupported chainId '${chainId}'. ` +
+        `Supported chains: ${supported}.`,
+      );
+    }
+
+    this.chainId   = chainId;
     this.metadata  = options.metadata;
     this.client    = (options.client as WalletConnectSignClient) ?? null;
     this.session   = (options.session as WalletConnectSession) ?? null;
@@ -144,17 +162,26 @@ export class WalletConnectAdapter implements WalletAdapter {
    * Disconnect the WalletConnect session.
    */
   async disconnect(): Promise<void> {
-    if (this.client && this.session && typeof this.client.disconnect === 'function') {
-      await this.client.disconnect({
-        topic: this.session.topic,
-        reason: { code: 6000, message: 'User disconnected' },
-      });
+    const session = this.session;
+    try {
+      if (this.client && session && typeof this.client.disconnect === 'function') {
+        await this._withTimeout(
+          this.client.disconnect({
+            topic: session.topic,
+            reason: { code: 6000, message: 'User disconnected' },
+          }),
+          'WalletConnect disconnect()'
+        );
+      }
+    } finally {
+      this.session = null;
     }
-    this.session = null;
   }
 
   /**
    * Sign a transaction using WalletConnect v2 RPC call.
+   *
+   * @throws {Error} if networkPassphrase is not provided in opts
    */
   async signTransaction(
     tx: Transaction | string,
@@ -163,6 +190,13 @@ export class WalletConnectAdapter implements WalletAdapter {
     const pubKey = await this.getPublicKey();
     const xdrString = typeof tx === 'string' ? tx : tx.toXDR();
     const passphrase = opts?.networkPassphrase;
+
+    if (!passphrase) {
+      throw new Error(
+        'networkPassphrase is required for signTransaction. ' +
+        'Pass it via opts.networkPassphrase or configure it at adapter construction time.'
+      );
+    }
 
     if (!this.client || typeof this.client.request !== 'function') {
       throw new Error('WalletConnect SignClient request handler is not available.');
@@ -200,7 +234,7 @@ export class WalletConnectAdapter implements WalletAdapter {
       return signedXdr;
     }
 
-    return new Transaction(signedXdr, passphrase ?? '');
+    return new Transaction(signedXdr, passphrase);
   }
 
   /**

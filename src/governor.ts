@@ -9,10 +9,12 @@ import {
   buildContractCallTx,
   simulateReadOnly,
   scValToI128,
+  scValToU32,
   scValToU64,
   NETWORK_PASSPHRASE,
   DEFAULT_RPC,
 } from './soroban.js';
+import { SUPPORTED_NETWORKS, UnsupportedChainError } from './errors.js';
 
 export class GovernorModule {
   private readonly rpcUrl:      string;
@@ -28,6 +30,11 @@ export class GovernorModule {
   // module unconditionally, so the missing-address check has to be deferred
   // to first actual use (getConfig()) rather than thrown in the constructor.
   constructor(cfg: ConduitConfig) {
+    // Guard against direct construction with an unsupported network, which
+    // would bypass the ConduitClient validation gate (fixes #157).
+    if (!(SUPPORTED_NETWORKS as readonly string[]).includes(cfg.network)) {
+      throw new UnsupportedChainError(cfg.network);
+    }
     this.rpcUrl     = cfg.rpcUrl ?? DEFAULT_RPC[cfg.network];
     this.passphrase = NETWORK_PASSPHRASE[cfg.network];
     this.governorId = cfg.governorAddress;
@@ -59,10 +66,14 @@ function parseGovernorConfig(val: xdr.ScVal): GovernorConfig {
     m[k] = e.val();
   }
   return {
-    feeBps:             m['fee_bps']?.u32() ?? 0,
-    feeRecipient:       m['fee_recipient'] ? Address.fromScVal(m['fee_recipient']).toString() : '',
+    feeBps:             m['fee_bps'] ? scValToU32(m['fee_bps']) : 0,
     minDurationSeconds: m['min_duration_seconds'] ? Number(scValToU64(m['min_duration_seconds'])) : 0,
+    maxDurationSeconds: m['max_duration_seconds'] ? Number(scValToU64(m['max_duration_seconds'])) : 0,
     maxRatePerSecond:   m['max_rate_per_second'] ? scValToI128(m['max_rate_per_second']) : 0n,
-    factoryAddress:     m['factory_address'] ? Address.fromScVal(m['factory_address']).toString() : '',
+    // exactOptionalPropertyTypes forbids assigning `undefined` to an optional
+    // key directly — the key must be entirely absent instead, hence the
+    // conditional spreads rather than `feeRecipient: ... ? ... : undefined`.
+    ...(m['fee_recipient'] ? { feeRecipient: Address.fromScVal(m['fee_recipient']).toString() } : {}),
+    ...(m['factory_address'] ? { factoryAddress: Address.fromScVal(m['factory_address']).toString() } : {}),
   };
 }

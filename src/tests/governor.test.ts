@@ -14,6 +14,7 @@ vi.mock('../soroban.js', () => ({
   simulateReadOnly:    mockSimulate,
   scValToU64: (v: { u64: () => { toString: () => string } }) =>
     BigInt(v.u64().toString()),
+  scValToU32: (v: { u32: () => number }) => v.u32(),
   scValToI128: (v: { i128: () => { hi: () => { toString: () => string }; lo: () => { toString: () => string } } }) => {
     const i128 = v.i128();
     return (BigInt(i128.hi().toString()) << 64n) | BigInt(i128.lo().toString());
@@ -129,7 +130,7 @@ describe('GovernorModule — getConfig()', () => {
     expect(config.feeRecipient).not.toBe(config.factoryAddress);
   });
 
-  it('defaults missing fields to falsy/zero values rather than throwing', async () => {
+  it('returns undefined for missing address fields rather than empty strings', async () => {
     const { GovernorModule } = await import('../governor.js');
     mockSimulate.mockResolvedValueOnce(scvMap({}));
 
@@ -137,7 +138,7 @@ describe('GovernorModule — getConfig()', () => {
     expect(config.feeBps).toBe(0);
     expect(config.minDurationSeconds).toBe(0);
     expect(config.maxRatePerSecond).toBe(0n);
-    expect(config.feeRecipient).toBe('');
-    expect(config.factoryAddress).toBe('');
+    expect(config.feeRecipient).toBeUndefined();
+    expect(config.factoryAddress).toBeUndefined();
   });
 });
