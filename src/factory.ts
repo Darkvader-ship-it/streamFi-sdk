@@ -52,6 +52,7 @@ export class FactoryModule {
   // stream_address simulation for each of them on every refresh (#568).
   private readonly addressCache = new Map<string, string | null>();
   private readonly negativeCacheExpiry = new Map<string, number>();
+  private readonly _negativeCacheTtlMs: number;
   private _cacheHits = 0;
   private _cacheMisses = 0;
 
@@ -74,6 +75,7 @@ export class FactoryModule {
       );
     }
     this.factoryId  = config.factoryAddress;
+    this._negativeCacheTtlMs = config.negativeCacheTtlMs ?? NEGATIVE_ADDRESS_CACHE_TTL_MS;
 
     if (config.wallet) {
       this.activeWallet = config.wallet;
@@ -200,7 +202,7 @@ export class FactoryModule {
 
   private _cacheNegative(key: string): void {
     this.addressCache.set(key, null);
-    this.negativeCacheExpiry.set(key, Date.now() + NEGATIVE_ADDRESS_CACHE_TTL_MS);
+    this.negativeCacheExpiry.set(key, Date.now() + this._negativeCacheTtlMs);
   }
 
   /**
